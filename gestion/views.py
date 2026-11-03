@@ -8,7 +8,15 @@ from .models import CuentaWhatsapp, Cliente, Conversacion, Mensaje
 from .serializers import(
     CuentaWhatsappSerializers, ClienteSerealizers, ConversacionDetalleSerializers, MensajeSerealizers
 )
-
+from twilio.rest import Client
+from django.conf import settings
+from django.http import HttpResponse 
+from django.views.decorators.csrf import csrf_exempt
+from .servicios.procesador import (
+     obtener_o_crear_cliente,
+     obtener_o_crear_conversacion,
+     generar_respuesta_ia,
+ )
 class CuentaWhatsappViewSet(viewsets.ReadOnlyModelViewSet):
     #para usuarios autorizados
     serializer_class = CuentaWhatsappSerializers
@@ -35,19 +43,8 @@ class ConversacionViewSet(viewsets.ReadOnlyModelViewSet):
         conversacion.save()
         return Response({"mensaje","Conversacion asignada correctamente"})
 
-     
-    
 
 
-from twilio.rest import Client
-from django.conf import settings
-from django.http import HttpResponse 
-from django.views.decorators.csrf import csrf_exempt
-from .servicios.procesador import (
-     obtener_o_crear_cliente,
-     obtener_o_crear_conversacion,
-     generar_respuesta_ia,
- )
  # Inicializamos Twilio
 cliente_twilio = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 @csrf_exempt  # Necesario porque Twilio no envía el token CSRF
@@ -77,10 +74,8 @@ def webhook_whatsapp(request):
          texto=texto_mensaje
      )
      # Generamos respuesta
-     if conversacion.estado == "pendiente_agente":
-         respuesta = "Un agente se pondrá en contacto contigo pronto."
-     else:
-         respuesta = generar_respuesta_ia(conversacion, texto_mensaje)
+   
+     respuesta = generar_respuesta_ia(conversacion, texto_mensaje)
      # Guardamos la respuesta del sistema
      Mensaje.objects.create(
          conversacion=conversacion,
@@ -93,4 +88,43 @@ def webhook_whatsapp(request):
          from_=f"whatsapp:{numero_destino}",
          to=f"whatsapp:{numero_remitente}"
      )
+    
+
+ #  Te avisás a VOS mismo
+     if "En breve uno de nuestros agentes" in respuesta:
+           from gestion.models import Agente
+           try:
+               agente = Agente.objects.get(nombre="Marcelo")
+               if agente.telefono:
+                   numero_texto = str(agente.telefono).strip()
+                   tu_numero = f"whatsapp:{numero_texto}" # ← CAMBIÁ por TU número
+                   print(f"numero limpio : {numero_texto}")
+                   cliente_twilio.messages.create(
+                   body=f" NECESITAN AGENTE\nCliente: {numero_remitente}",
+                   from_=f"whatsapp:{numero_destino}",
+                   to=tu_numero
+                   )
+           except Agente.DoesNotExist:
+               print("no se encontro al agente")
      return HttpResponse("Mensaje procesado correctamente")
+     
+ 
+ 
+
+
+@action(detail=True, methods=["post"])
+def asignar_agente(self, request, pk=None):
+     conversacion = self.get_object()
+     agente_id = request.data.get("agente_id")
+     
+     if not agente_id:
+         return Response({"error": "Falta el ID del agente"}, status=400)
+     
+     # Asignamos el agente
+     conversacion.asignada_a_id = agente_id
+     
+     #  Cambiamos el estado de vuelta a activa
+     conversacion.estado = "activa"
+     conversacion.save()
+     
+     return Response({"mensaje": " Agente asignado correctamente"})

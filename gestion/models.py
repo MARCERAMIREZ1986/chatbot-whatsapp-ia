@@ -28,25 +28,34 @@ class Cliente(models.Model):
      def __str__(self):
           return self.nombre or self.numero_telefono
      
+
+class Agente(models.Model):
+    nombre = models.CharField(max_length=100)
+    telefono = models.CharField(max_length=20, blank=True)
+    correo = models.EmailField(blank=True)
+    
+    def __str__(self):
+        return self.nombre
+     
 class Conversacion(models.Model):
-     #vinculo entre cuenta, cliente y el estado del chat
+     
      ESTADOS = [("activa","Activa"),("pendente_agente","Pasa a agente humano"),("cerrada","Finalizada")]
      cuenta = models.ForeignKey(CuentaWhatsapp, on_delete=models.CASCADE, related_name="conversaciones")
      cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="chats")
      estado = models.CharField(max_length=25, choices=ESTADOS, default="activa")
-     asignada_a = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Agente asignado")
+     asignada_a = models.ForeignKey(Agente, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Agente asignado")
      fecha_inicio = models.DateTimeField(auto_now_add=True)
      class Meta:
           verbose_name = "Conversacion"
           verbose_name_plural = "Conversaciones"
     
      def __str__(self):
-        return f"{self.cliente}|{self.get_estado_diszplay()}"
+        return f"{self.cliente}|{self.get_estado_display()}"
 class Mensaje(models.Model):
-     #cada mensaje individual dentro de una conversacion
+     
      ORIGEN = [
           ("cliente","Enviado por cliente"),
-          ("bot","Enviadopor el asistente"),
+          ("bot","Enviado por el asistente"),
           ("agente","Enviado por agente")
      ]
      
@@ -61,3 +70,8 @@ class Mensaje(models.Model):
           verbose_name_plural = "Mensajes"
      def __str__(self):
        return f"{self.get_origen_display()}:{self.texto[:40]}..."
+  
+  
+
+
+   

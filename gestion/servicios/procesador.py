@@ -1,6 +1,6 @@
 from groq import Groq
 from django.conf import settings
-from ..models import Cliente, Conversacion, Mensaje
+from ..models import Cliente, Conversacion, Mensaje,Agente
  # Configuramos la clave de OpenAI que ya tienes en .env
 cliente_groq=Groq(api_key=settings.GROQ_API_KEY)
 
@@ -26,34 +26,49 @@ def obtener_o_crear_conversacion(cliente, cuenta):
          )
      return conversacion
 def generar_respuesta_ia(conversacion, mensaje_nuevo):
-     """Construye el historial y pide respuesta a la IA"""
-     # Obtenemos los mensajes anteriores para dar contexto
-     historial = conversacion.mensaje.order_by("fecha_envio")[:10]  # últimos 10 mensajes
+     print(f"mensaje: {mensaje_nuevo}")
+     
+     # 1. Si ya está pendiente de agente → no llamamos a la IA, solo avisamos
+     if conversacion.estado == "pendiente_agente":
+         return "✅ Un agente se pondrá en contacto contigo pronto."
+     
+     # 2. Si está activa → la IA responde normalmente
+     historial = conversacion.mensaje.order_by("fecha_envio")[:10]
+     
      mensajes_para_ia = [
-         {"role": "system", "content": """
-             Eres un asistente amable y eficiente para una empresa.
-             Responde de forma clara, breve y útil. Si no sabes algo, indícalo.
-             Si el cliente pide hablar con una persona, avisa que lo derivarás.
-         """}
+         {"role": "system", "content": "Eres un asistente amable y eficiente. Responde de forma clara y breve."}
      ]
-     # Agregamos el historial
+     
      for msg in historial:
          rol = "user" if msg.origen == "cliente" else "assistant"
          mensajes_para_ia.append({"role": rol, "content": msg.texto})
-     # Agregamos el mensaje actual
+     
      mensajes_para_ia.append({"role": "user", "content": mensaje_nuevo})
-     # Llamamos a la IA
      
      respuesta = cliente_groq.chat.completions.create(
-         model="openai/gpt-oss-120b",
+         model="openai/gpt-oss-20b",
          messages=mensajes_para_ia,
          temperature=0.7
      )
+     
      texto_respuesta = respuesta.choices[0].message.content.strip()
-     #  Detectamos si pide hablar con agente humano
+     print(f"Respuesta IA: {texto_respuesta}")
+     
+     # 3. Detectamos si el usuario pide hablar con alguien
      palabras_clave = ["hablar con alguien", "agente", "persona humana", "atención personalizada"]
-     if any(palabra in texto_respuesta.lower() or palabra in mensaje_nuevo.lower() for palabra in palabras_clave):
+     hay_palabra_clave = any(palabra in mensaje_nuevo.lower() for palabra in palabras_clave)
+     
+     if hay_palabra_clave:
          conversacion.estado = "pendiente_agente"
+         
+         # Asignar agente automáticamente
+         try:
+             agente = Agente.objects.get(nombre="Marcelo")
+             conversacion.asignada_a = agente
+         except Agente.DoesNotExist:
+             print(" No se encontró el agente")
+         print(f"cliente:{mensaje_nuevo}")
          conversacion.save()
-         texto_respuesta = "Entendido. En breve uno de nuestros agentes se pondrá en contacto contigo. Quedo atento."
+         return " Entendido. En breve uno de nuestros agentes se pondrá en contacto contigo."
+     
      return texto_respuesta
